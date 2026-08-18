@@ -91,7 +91,7 @@ Exit code is non-zero if any `error`-severity finding remains.
 ## As a GitHub Action
 
 ```yaml
-- uses: Al1084/GitHub-Actions-Validator@v0.1.0
+- uses: Al1084/GitHub-Actions-Validator@v0.1.1
   with:
     paths: .github/workflows/*.yml  # default
     format: github                  # default; table|json|github
