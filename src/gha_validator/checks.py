@@ -7,12 +7,13 @@ in CHECKS so validator.py picks them up automatically.
 
 from __future__ import annotations
 
+import operator
 import re
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-from gha_validator.github_api import get_latest_release_tag
+from gha_validator.github_api import get_actions_advisories, get_latest_release_tag
 
 
 class Severity(str, Enum):
@@ -189,8 +190,119 @@ def check_deprecated_actions(workflow: dict[str, Any], file: str) -> list[Findin
     return findings
 
 
+_RANGE_CLAUSE_RE = re.compile(r"^(<=|>=|<|>|=)\s*(.+)$")
+_COMPARATORS = {
+    "<": operator.lt,
+    "<=": operator.le,
+    ">": operator.gt,
+    ">=": operator.ge,
+    "=": operator.eq,
+}
+
+
+def _version_in_range(current: tuple[int, int, int], range_text: str) -> bool | None:
+    """Check `current` against a GitHub advisory `vulnerable_version_range`.
+
+    The range is a comma-separated list of clauses (e.g. '>= 2.25.0, <
+    2.37.1') that must ALL hold. Returns True/False, or None if any clause
+    doesn't parse - callers should treat None as "unknown, not cleared".
+    """
+    clauses = []
+    for raw_clause in range_text.split(","):
+        match = _RANGE_CLAUSE_RE.match(raw_clause.strip())
+        if not match:
+            return None
+        op, version_text = match.groups()
+        version = _parse_version(version_text.strip())
+        if version is None:
+            return None
+        clauses.append((op, version))
+    return all(_COMPARATORS[op](current, version) for op, version in clauses)
+
+
+def check_security_advisories(workflow: dict[str, Any], file: str) -> list[Finding]:
+    """Flag actions pinned to a version covered by a published GitHub security advisory.
+
+    Every advisory finding is ERROR severity regardless of GitHub's own
+    severity label (critical/high/medium/low all still mean "known CVE") -
+    the label is included in the message instead. When the range can't be
+    confirmed (unparseable, or a range with no upper bound - i.e. no fix
+    has been published) the finding is still reported without a `fix`,
+    rather than silently skipped: over-reporting is preferable to missing
+    a real vulnerability.
+    """
+    findings: list[Finding] = []
+
+    by_repo: dict[str, list[tuple[dict, dict]]] = {}
+    for advisory in get_actions_advisories():
+        for vuln in advisory.get("vulnerabilities", []):
+            package = vuln.get("package") or {}
+            if package.get("ecosystem") != "actions" or not package.get("name"):
+                continue
+            by_repo.setdefault(package["name"].lower(), []).append((advisory, vuln))
+
+    if not by_repo:
+        return findings
+
+    for job_id, step_index, uses, line in _iter_action_refs(workflow):
+        parsed = _parse_action_ref(uses)
+        if parsed is None:
+            continue  # local action (./...) or docker:// ref: not in scope
+        owner, repo, ref = parsed
+        matches = by_repo.get(f"{owner}/{repo}".lower())
+        if not matches:
+            continue
+
+        if _SHA_RE.match(ref.lower()):
+            continue  # no version to range-compare a commit SHA against
+
+        current = _parse_version(ref)
+        if current is None:
+            continue  # mutable ref - unpinned-action already covers this
+
+        location = f"jobs.{job_id}.steps[{step_index}]"
+
+        for advisory, vuln in matches:
+            range_text = vuln.get("vulnerable_version_range", "")
+            in_range = _version_in_range(current, range_text)
+            if in_range is False:
+                continue  # confirmed this pinned version isn't affected
+
+            ghsa_id = advisory.get("ghsa_id", "?")
+            severity_label = advisory.get("severity", "unknown")
+            summary = advisory.get("summary", "")
+            url = advisory.get("html_url", "")
+            patched = vuln.get("first_patched_version")
+
+            fix = None
+            if in_range is None:
+                status = f"could not confirm the pinned version against the advisory's range ('{range_text}') - reporting to be safe"
+            elif not patched:
+                status = "no patched version has been published yet"
+            else:
+                status = f"fixed in {patched}"
+                fix = Fix(old=f"{owner}/{repo}@{ref}", new=f"{owner}/{repo}@{patched}")
+
+            findings.append(
+                Finding(
+                    check="security-advisory",
+                    severity=Severity.ERROR,
+                    message=(
+                        f"{location}: `{owner}/{repo}@{ref}` — [{ghsa_id}] ({severity_label} severity) "
+                        f"{summary}. {status}. {url}"
+                    ),
+                    file=file,
+                    line=line,
+                    fix=fix,
+                )
+            )
+
+    return findings
+
+
 CHECKS = [
     check_pinned_versions,
     check_missing_permissions,
     check_deprecated_actions,
+    check_security_advisories,
 ]
