@@ -31,7 +31,7 @@ from gha_validator.validator import validate_paths
     "fix",
     is_flag=True,
     default=False,
-    help="Auto-bump outdated action version pins in place. Only affects outdated-action-version findings.",
+    help="Auto-bump version pins in place for outdated-action-version and security-advisory findings.",
 )
 def main(paths: tuple[Path, ...], output_format: str, fix: bool) -> None:
     """Validate GitHub Actions workflow files.
