@@ -98,3 +98,44 @@ def test_load_workflow_line_tagging_does_not_affect_non_string_values(tmp_path):
 
     assert workflow["fail-fast"] is True
     assert workflow["max-parallel"] == 4
+
+
+def test_malformed_yaml_produces_finding_not_crash(tmp_path: Path) -> None:
+    workflow_file = tmp_path / "ci.yml"
+    workflow_file.write_text("on: push\njobs: [unclosed\n")
+
+    findings = validate_file(workflow_file)  # must not raise
+
+    assert len(findings) == 1
+    assert findings[0].check == "yaml-syntax-error"
+    assert findings[0].severity == validator.Severity.ERROR
+    assert "Invalid YAML" in findings[0].message
+
+
+def test_non_mapping_top_level_produces_finding_not_crash(tmp_path: Path) -> None:
+    workflow_file = tmp_path / "ci.yml"
+    workflow_file.write_text("- just\n- a\n- list\n")
+
+    findings = validate_file(workflow_file)  # must not raise
+
+    assert len(findings) == 1
+    assert findings[0].check == "yaml-syntax-error"
+    assert findings[0].severity == validator.Severity.ERROR
+    assert "mapping" in findings[0].message
+    assert "list" in findings[0].message
+
+
+def test_check_crash_isolated_as_finding_other_checks_still_run(tmp_path: Path) -> None:
+    workflow_file = tmp_path / "ci.yml"
+    # "jobs" that parses fine as YAML but isn't the dict-of-jobs every check expects -
+    # exercises _iter_action_refs's `jobs.items()` call on a non-dict.
+    workflow_file.write_text("on: push\njobs: not-a-mapping\n")
+
+    findings = validate_file(workflow_file)  # must not raise
+
+    by_check = {f.check for f in findings}
+    assert "check-error" in by_check
+    assert "missing-permissions" in by_check  # unaffected checks still ran
+    error_findings = [f for f in findings if f.check == "check-error"]
+    assert all(f.severity == validator.Severity.ERROR for f in error_findings)
+    assert all("AttributeError" in f.message for f in error_findings)

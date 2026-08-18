@@ -7,7 +7,7 @@ from pathlib import Path
 
 import yaml
 
-from gha_validator.checks import CHECKS, Finding
+from gha_validator.checks import CHECKS, Finding, Severity
 
 
 class _LineStr(str):
@@ -68,12 +68,60 @@ def _normalize_path(path: Path) -> str:
             return resolved.as_posix()  # e.g. different drive on Windows: no relative form exists
 
 
+def _yaml_problem_line(exc: yaml.YAMLError) -> int | None:
+    mark = getattr(exc, "problem_mark", None)
+    return mark.line + 1 if mark is not None else None
+
+
 def validate_file(path: Path) -> list[Finding]:
-    workflow = load_workflow(path)
+    """Load and validate one workflow file.
+
+    A workflow file is untrusted input - it can be syntactically invalid
+    YAML, valid YAML that isn't a mapping (e.g. a bare list), or a mapping
+    shaped in a way an individual check doesn't expect. None of that should
+    crash the run: each failure mode is caught here and turned into an
+    ERROR-severity Finding instead, so one bad file among many still lets
+    the rest get validated, and the CLI reports a clean result instead of a
+    traceback.
+    """
     file = _normalize_path(path)
+
+    try:
+        workflow = load_workflow(path)
+    except yaml.YAMLError as exc:
+        return [
+            Finding(
+                check="yaml-syntax-error",
+                severity=Severity.ERROR,
+                message=f"Invalid YAML: {exc}",
+                file=file,
+                line=_yaml_problem_line(exc),
+            )
+        ]
+
+    if not isinstance(workflow, dict):
+        return [
+            Finding(
+                check="yaml-syntax-error",
+                severity=Severity.ERROR,
+                message=f"Workflow does not parse to a YAML mapping (got {type(workflow).__name__}).",
+                file=file,
+            )
+        ]
+
     findings: list[Finding] = []
     for check in CHECKS:
-        findings.extend(check(workflow, file))
+        try:
+            findings.extend(check(workflow, file))
+        except Exception as exc:
+            findings.append(
+                Finding(
+                    check="check-error",
+                    severity=Severity.ERROR,
+                    message=f"{check.__name__} failed on this file: {type(exc).__name__}: {exc}",
+                    file=file,
+                )
+            )
     return findings
 
 
