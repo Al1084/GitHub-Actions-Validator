@@ -4,10 +4,14 @@ CLI tool to validate GitHub Actions workflows: outdated action versions, depreca
 
 ## Install
 
-Not yet published to PyPI. Install from source:
+```bash
+pip install gha-validator
+```
+
+For unreleased changes on `main`, install from git instead:
 
 ```bash
-pip install git+https://github.com/Al1084/GitHub-Actions-Validator.git@v0.1.0
+pip install git+https://github.com/Al1084/GitHub-Actions-Validator.git@main
 ```
 
 ## Usage
