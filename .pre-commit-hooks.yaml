@@ -4,3 +4,4 @@
   entry: gha-validate
   language: python
   files: ^\.github/workflows/.*\.ya?ml$
+  verbose: true
