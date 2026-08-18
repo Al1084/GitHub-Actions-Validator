@@ -115,6 +115,40 @@ def test_skips_finding_whose_old_text_is_no_longer_present(tmp_path, monkeypatch
     assert remaining == [finding]
 
 
+def test_advisory_fix_wins_over_outdated_version_fix_on_same_line(tmp_path, monkeypatch):
+    """An action that's both outdated (INFO, fix -> latest) and has a security
+    advisory (ERROR, fix -> minimal patched version) on the same line: the
+    ERROR/advisory fix must win, since it's the smaller, CVE-clearing change -
+    bumping straight to latest could be a breaking major version jump.
+    """
+    monkeypatch.setattr(fixer, "repo_root", lambda: tmp_path)
+    workflow = tmp_path / "ci.yml"
+    workflow.write_text("uses: wktk/conflibot@v1.0.0\n")
+
+    outdated = Finding(
+        check="outdated-action-version",
+        severity=Severity.INFO,
+        message="outdated",
+        file="ci.yml",
+        line=1,
+        fix=Fix(old="wktk/conflibot@v1.0.0", new="wktk/conflibot@v2.0.0"),
+    )
+    advisory = Finding(
+        check="security-advisory",
+        severity=Severity.ERROR,
+        message="vulnerable",
+        file="ci.yml",
+        line=1,
+        fix=Fix(old="wktk/conflibot@v1.0.0", new="wktk/conflibot@1.2.1"),
+    )
+
+    remaining, applied = fixer.apply_fixes([outdated, advisory])
+
+    assert applied == [advisory]
+    assert remaining == [outdated]
+    assert workflow.read_text() == "uses: wktk/conflibot@1.2.1\n"
+
+
 def test_does_not_touch_identical_text_in_a_comment_on_another_line(tmp_path, monkeypatch):
     """Regression test for the exact risk flagged: a comment earlier in the file repeats the
     same `owner/repo@ref` string as the real, flagged `uses:` line. A whole-file
