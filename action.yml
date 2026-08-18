@@ -1,0 +1,41 @@
+name: "gha-validator"
+description: "Validate GitHub Actions workflows: outdated action versions, deprecated actions, missing permissions."
+author: "Alexis Leclair"
+branding:
+  icon: "check-circle"
+  color: "blue"
+
+inputs:
+  paths:
+    description: "Workflow files to validate (glob supported)."
+    required: false
+    default: ".github/workflows/*.yml"
+  format:
+    description: "Output format: table, json, or github."
+    required: false
+    default: "github"
+  fix:
+    description: "Auto-bump outdated action version pins in place."
+    required: false
+    default: "false"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v7.0.0
+      with:
+        python-version: "3.x"
+
+    - name: Install gha-validator
+      shell: bash
+      run: pip install "${{ github.action_path }}"
+
+    - name: Run gha-validate
+      shell: bash
+      run: |
+        cmd="gha-validate --format ${{ inputs.format }}"
+        if [ "${{ inputs.fix }}" = "true" ]; then
+          cmd="$cmd --fix"
+        fi
+        $cmd ${{ inputs.paths }}
