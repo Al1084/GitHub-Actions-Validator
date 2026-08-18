@@ -91,7 +91,7 @@ Exit code is non-zero if any `error`-severity finding remains.
 ## As a GitHub Action
 
 ```yaml
-- uses: Al1084/GitHub-Actions-Validator@v0.1.1
+- uses: Al1084/GitHub-Actions-Validator@v0.1.2
   with:
     paths: .github/workflows/*.yml  # default
     format: github                  # default; table|json|github
@@ -107,7 +107,7 @@ Add to your `.pre-commit-config.yaml`:
 ```yaml
 repos:
   - repo: https://github.com/Al1084/GitHub-Actions-Validator
-    rev: v0.1.1
+    rev: v0.1.2
     hooks:
       - id: gha-validate
 ```
