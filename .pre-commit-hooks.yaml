@@ -1,0 +1,6 @@
+- id: gha-validate
+  name: gha-validate
+  description: Validate GitHub Actions workflows (outdated/deprecated actions, unpinned refs, missing permissions).
+  entry: gha-validate
+  language: python
+  files: ^\.github/workflows/.*\.ya?ml$

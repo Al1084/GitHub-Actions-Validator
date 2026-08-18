@@ -100,6 +100,20 @@ Exit code is non-zero if any `error`-severity finding remains.
 
 No `pip install` step needed — the action installs itself from its own pinned ref.
 
+## As a pre-commit hook
+
+Add to your `.pre-commit-config.yaml`:
+
+```yaml
+repos:
+  - repo: https://github.com/Al1084/GitHub-Actions-Validator
+    rev: v0.1.1
+    hooks:
+      - id: gha-validate
+```
+
+Runs automatically against changed files under `.github/workflows/`. `language: python`, so pre-commit builds an isolated environment for it — no separate install step needed.
+
 ## Checks
 
 - `outdated-action-version` — a pinned version tag has a newer release available
